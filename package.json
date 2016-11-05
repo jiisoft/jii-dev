@@ -1,0 +1,29 @@
+{
+  "name": "jii-dev",
+  "version": "0.15.0",
+  "description": "Development utils",
+  "main": "index.js",
+  "author": "Vladimir Kozhin <affka@affka.ru>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jiisoft/jii-dev"
+  },
+  "keywords": [
+    "yii",
+    "php",
+    "framework",
+    "javascript"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/jiisoft/jii-dev",
+  "bugs": {
+    "url": "https://github.com/jiisoft/jii-dev/issues"
+  },
+  "dependencies": {
+    "escodegen": "^1.8.1",
+    "esformatter": "^0.10.0",
+    "esprima": "^3.1.1",
+    "glob": "^7.1.1",
+    "prompt": "^1.0.0"
+  }
+}
