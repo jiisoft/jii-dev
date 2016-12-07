@@ -48,6 +48,7 @@ const processFile = function (path) {
 
     console.log(`Convert classes in file ${path}...`);
 
+    // Existing code tree
     let ast = esprima.parse(content, {
         range: true,
         tokens: true,
@@ -63,6 +64,7 @@ const processFile = function (path) {
         let properties = null;
         let classAst = null;
 
+        // Result: super(...arguments);
         const defaultConstructor = {
             "type": "ExpressionStatement",
             "expression": {
@@ -75,6 +77,7 @@ const processFile = function (path) {
             }
         };
 
+        // Result: constructor() { super(); }
         const classBodyAst = [
             {
                 "type": "MethodDefinition",
@@ -96,10 +99,15 @@ const processFile = function (path) {
             }
         ];
 
+        // Looking for 'module.exports = Jii.defineClass' type of class definition
         if (item.type === 'ExpressionStatement'
             && item.expression
             && item.expression.type === 'AssignmentExpression'
-            && item.expression.right.arguments) {
+            && item.expression.right.arguments
+            && item.expression.right.callee
+            && item.expression.right.callee.property.name == 'defineClass'
+        ) {
+            // E.g. extract 'ActiveRecordTest' from 'tests.unit.ActiveRecordTest'
             className = item.expression.right.arguments[0].value.replace(/.*\.([^.]+)$/, '$1');
             properties = item.expression.right.arguments[1].properties;
 
@@ -113,12 +121,16 @@ const processFile = function (path) {
             }
         }
 
+        // Looking for 'var <className> = Jii.defineClass' type of class definition
         if (item.type === 'VariableDeclaration'
+            && item.declarations[0].init.callee
             && item.declarations[0].init.callee.property
-            && item.declarations[0].init.callee.property.name === 'defineClass') {
+            && item.declarations[0].init.callee.property.name === 'defineClass'
+        ) {
             className = item.declarations[0].id.name;
             properties = item.declarations[0].init.arguments[1].properties;
 
+            // Overwrite current item with the class declaration
             ast.body[a] = classAst = {
                 "type": "ClassExpression",
                 "id": {"type": "Identifier", "name": className},
@@ -134,44 +146,71 @@ const processFile = function (path) {
 
             // Merge constructor
             properties.forEach((prop, i) => {
+
+                // Iterate only expressions of the 'constructor' function
                 if (prop && prop.key.name === 'constructor') {
                     prop.value.body.body.forEach((expr, k) => {
+
+
+                        // If it's a call of this.<method>
                         if (expr.type === 'ExpressionStatement'
                             && expr.expression.type === 'CallExpression'
                             && expr.expression.callee.type === 'MemberExpression')
                         {
+
+                            // Replace 'this.__super(args)' with 'super(args)'
                             if (expr.expression.callee.property.name === '__super') {
                                 defaultConstructor.expression.arguments = expr.expression.arguments;
                                 prop.value.body.body[k] = defaultConstructor;
                             }
+
                             if (expr.expression.callee.object.type === 'MemberExpression'
                                 && expr.expression.callee.object.property.name === '__super'
                             ) {
+                                // console.log('zxcvz', expr.expression.callee.object);
                                 prop.value.body.body[k] = defaultConstructor;
                             }
                         }
                     });
 
+                    // Replace default constructor with the newly created
                     classBodyAst[0] = prop;
+
+                    // Delete old constructor from the AST
                     properties[i] = null;
                 }
             });
 
-            // Find extends
+            // Find extends and replace it with the ES6 class extend syntax
             properties.forEach((prop, i) => {
                 if (prop && prop.key.name === '__extends') {
+                    let superClassName = "";
+
+                    // Superclass could be either single class ('React') or a subclass ('React.Component')
+                    if (prop.value.type = 'MemberExpression'
+                        && prop.value.object
+                        && prop.value.property
+                    ) {
+                        superClassName = prop.value.object.name + "." + prop.value.property.name;
+                    } else {
+                        superClassName = prop.value.name;
+                    }
+
                     classAst.superClass = {
                         type: "Identifier",
-                        name: prop.value.name
+                        name: superClassName
                     };
+
+                    // Delete old '__extends' from the AST
                     properties[i] = null;
                 }
             });
 
-            // Each static
+            // Move properties and methods definitions out of '__static' object
             properties.forEach((prop, i) => {
                 if (prop && prop.key.name === '__static') {
                     prop.value.properties.forEach(staticProp => {
+
                         // Static methods
                         if (staticProp.value.type === 'FunctionExpression') {
                             staticProp.static = true;
@@ -208,7 +247,7 @@ const processFile = function (path) {
                 }
             });
 
-            // Each prototype methods
+            // Replace 'super' calls in the class' methods
             properties.forEach(prop => {
                 if (prop && prop.value.type === 'FunctionExpression') {
 
@@ -230,19 +269,24 @@ const processFile = function (path) {
             let constructorBodyAst = classBodyAst[0].value.body.body;
             let superCallIndex = 0;
 
-            // Go super call to start constructor
+            // Move 'super' calls to the beginning of the constructor
             constructorBodyAst.forEach((cbaItem, cbaIndex) => {
                 if (cbaItem.type === 'ExpressionStatement'
                     && cbaItem.expression.type === 'CallExpression'
-                    && cbaItem.expression.callee.type === 'Super') {
+                    && cbaItem.expression.callee.type === 'Super'
+                ) {
                     constructorBodyAst.splice(cbaIndex, 1);
                     constructorBodyAst.unshift(cbaItem);
                     superCallIndex = 1;
                 }
             });
+
             properties.forEach(prop => {
+
+                // Search for the properties declarations/initializations in the class (e.g.: "id: null")
                 if (prop && prop.value.type !== 'FunctionExpression') {
-                    // Check exists
+
+                    // Check if this property value is replaced by some value in the constructor
                     const index = constructorBodyAst.findIndex(bodyItem => {
                         return bodyItem.type === 'ExpressionStatement' &&
                             bodyItem.expression.type === 'AssignmentExpression' &&
@@ -250,6 +294,8 @@ const processFile = function (path) {
                             bodyItem.expression.left.property.name === prop.key.name;
                     });
 
+                    // If the property is not replaced, then add it's initial declaration
+                    // to the constructor right after 'super' call
                     if (index === -1) {
                         constructorBodyAst.splice(superCallIndex, 0, {
                             "type": "ExpressionStatement",
@@ -328,7 +374,7 @@ process.argv.slice(2).forEach(item => {
                 }
 
                 processFile(file);
-            })
+            });
         }
     });
 });
