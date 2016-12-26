@@ -1,6 +1,6 @@
 {
   "name": "jii-dev",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Development utils",
   "main": "index.js",
   "author": "Vladimir Kozhin <affka@affka.ru>",
