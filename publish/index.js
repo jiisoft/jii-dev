@@ -70,6 +70,16 @@ prompt.get({
         // Publish all
         if (result.yn === 'y') {
             getPackages().forEach(json => {
+                child_process.exec(`git commit -m 'v${result.version}' package.json && git push`, {
+                    cwd: `${baseDir}/${json.name}`
+                }, (error, stdout, stderr) => {
+                    if (error) {
+                        console.error(error);
+                    } else {
+                        console.log(stdout);
+                    }
+                });
+
                 child_process.exec('npm publish', {
                     cwd: `${baseDir}/${json.name}`
                 }, (error, stdout, stderr) => {
