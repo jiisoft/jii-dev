@@ -42,6 +42,8 @@ prompt.get({
         return;
     }
 
+    const newVersion = result.version;
+
     // Update version
     getPackages().forEach(json => {
         console.log(`Update ${json.name} to ${result.version}...`);
@@ -70,7 +72,7 @@ prompt.get({
         // Publish all
         if (result.yn === 'y') {
             getPackages().forEach(json => {
-                child_process.exec(`git commit -m 'v${result.version}' package.json && git push`, {
+                child_process.exec(`git commit -m 'v${newVersion}' package.json && git push`, {
                     cwd: `${baseDir}/${json.name}`
                 }, (error, stdout, stderr) => {
                     if (error) {
